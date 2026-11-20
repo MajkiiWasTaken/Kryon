@@ -1,9 +1,13 @@
 [package]
 name = "Kryon"
 authors = ["Michal Švrček"]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
 gpui = { git = "https://github.com/zed-industries/zed" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "wayland", "x11"] }
+ropey = "1.6.1"
+tree-sitter = "0.27.2"
+tree-sitter-rust = "0.24.2"
+unicode-segmentation = "1.13.3"

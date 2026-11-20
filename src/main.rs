@@ -1,3 +1,5 @@
+mod editor;
+mod syntax;
 mod ui;
 mod workspace;
 
@@ -15,7 +17,7 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 ..Default::default()
             },
-            |_, cx| cx.new(|_| KryonApp::new()),
+            |_, cx| cx.new(|cx| KryonApp::new(cx)),
         )
         .expect("Failed to open Kryon IDE");
 

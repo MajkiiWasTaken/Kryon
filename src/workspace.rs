@@ -70,7 +70,6 @@ impl Workspace {
             .filter_map(|entry| {
                 let file_type = entry.file_type().ok()?;
 
-                // Symbolické odkazy v první verzi nepřecházíme.
                 if file_type.is_symlink() {
                     return None;
                 }
@@ -106,7 +105,9 @@ impl Workspace {
             });
 
             if expanded {
-                self.collect_entries(&path, depth + 1, result)?;
+                if let Err(error) = self.collect_entries(&path, depth + 1, result) {
+                    eprintln!("[KRYON] Cannot read {}: {}", path.display(), error);
+                }
             }
         }
 
@@ -115,7 +116,11 @@ impl Workspace {
 }
 
 pub fn read_preview(path: &Path) -> io::Result<String> {
-    const MAX_PREVIEW_BYTES: u64 = 256 * 1024;
+    use std::io::Read;
+
+    const MAX_BYTES: u64 = 64 * 1024;
+    const MAX_LINES: usize = 250;
+    const MAX_LINE_CHARS: usize = 500;
 
     let metadata = fs::metadata(path)?;
 
@@ -126,16 +131,28 @@ pub fn read_preview(path: &Path) -> io::Result<String> {
         ));
     }
 
-    if metadata.len() > MAX_PREVIEW_BYTES {
-        return Ok("File is too large for the current preview.".into());
-    }
+    let file = fs::File::open(path)?;
+    let mut bytes = Vec::new();
 
-    let bytes = fs::read(path)?;
+    file.take(MAX_BYTES).read_to_end(&mut bytes)?;
 
     if bytes.contains(&0) {
         return Ok("Binary file preview is unavailable.".into());
     }
 
-    String::from_utf8(bytes)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "File is not valid UTF-8"))
+    let content = String::from_utf8_lossy(&bytes);
+    let mut preview = String::new();
+
+    for line in content.lines().take(MAX_LINES) {
+        let shortened: String = line.chars().take(MAX_LINE_CHARS).collect();
+
+        preview.push_str(&shortened);
+        preview.push('\n');
+    }
+
+    if metadata.len() > MAX_BYTES || content.lines().count() > MAX_LINES {
+        preview.push_str("\n// Preview truncated. Full editor coming soon.\n");
+    }
+
+    Ok(preview)
 }
