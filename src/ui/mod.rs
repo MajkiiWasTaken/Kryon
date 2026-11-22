@@ -360,6 +360,24 @@ impl KryonApp {
                         range
                             .filter_map(|index| {
                                 let line = document.line(index)?;
+                                let cursor = document.cursor();
+
+                                let display_line = if cursor.line == index {
+                                    let byte_offset = line
+                                        .char_indices()
+                                        .nth(cursor.column)
+                                        .map(|(offset, _)| offset)
+                                        .unwrap_or(line.len());
+
+                                    format!(
+                                        "{}▏{}",
+                                        &line[..byte_offset],
+                                        &line[byte_offset..]
+                                    )
+                                } else {
+                                    line
+                                };
+
 
                                 Some(
                                     div()
@@ -378,8 +396,8 @@ impl KryonApp {
                                         )
                                         .child(
                                             div().text_color(rgb(Theme::TEXT)).child(
-                                                StyledText::new(line.clone())
-                                                    .with_highlights(highlight_rust(&line)),
+                                                StyledText::new(display_line.clone())
+                                                    .with_highlights(highlight_rust(&display_line)),
                                             ),
                                         ),
                                 )
@@ -444,14 +462,18 @@ impl KryonApp {
 
         if command {
             match key {
-                "s" => match document.save() {
-                    Ok(()) => {
-                        self.message = "File saved".to_string();
+                "s" => {
+                    match document.save() {
+                        Ok(()) => {
+                            self.message = "File saved".into();
+                        }
+                        Err(error) => {
+                            self.message = format!(
+                                "Save failed: {error}"
+                            );
+                        }
                     }
-                    Err(error) => {
-                        self.message = format!("Save failed: {error}");
-                    }
-                },
+                }
 
                 "z" if modifiers.shift => {
                     document.redo();
@@ -479,7 +501,27 @@ impl KryonApp {
 
                 "enter" => document.insert_newline(),
 
-                _ => return,
+                "tab" => {
+                    document.insert("    ");
+                }
+
+                _ => {
+                    // Temporary keyboard input until the native
+                    // GPUI EntityInputHandler is implemented.
+                    if modifiers.alt {
+                        return;
+                    }
+
+                    let Some(text) =
+                        event.keystroke.key_char.as_deref()
+                    else {
+                        return;
+                    };
+
+                    for ch in text.chars() {
+                        document.type_character(ch);
+                    }
+                }
             }
         }
 

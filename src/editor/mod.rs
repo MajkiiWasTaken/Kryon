@@ -138,20 +138,68 @@ impl EditorDocument {
     }
 
     pub fn insert_newline(&mut self) {
-        let current_line = self.line(self.cursor.line).unwrap_or_default();
+        let offset = self.cursor_offset();
+
+        let current_line = self
+            .line(self.cursor.line)
+            .unwrap_or_default();
 
         let indentation: String = current_line
             .chars()
             .take_while(|ch| *ch == ' ' || *ch == '\t')
             .collect();
 
-        let newline = if self.buffer.to_string().contains("\r\n") {
+        // default indent for now is 4 spaces
+        let indent_unit = "    ";
+
+        let first_line = self.buffer.line(0).to_string();
+
+        let newline = if first_line.ends_with("\r\n") {
             "\r\n"
         } else {
             "\n"
         };
 
-        self.insert(&format!("{newline}{indentation}"));
+        let before = if offset > 0 {
+            Some(self.buffer.char(offset - 1))
+        } else {
+            None
+        };
+
+        let after = if offset < self.char_count() {
+            Some(self.buffer.char(offset))
+        } else {
+            None
+        };
+
+        // special case... pressing enter between brackets
+        if matches!(
+            (before, after),
+            (Some('{'), Some('}'))
+                | (Some('('), Some(')'))
+                | (Some('['), Some(']'))
+        ) {
+            let insertion = format!(
+                "{newline}{indentation}{indent_unit}{newline}{indentation}"
+            );
+
+            self.replace_range(offset, offset, &insertion);
+
+            let cursor_offset = offset
+                + newline.chars().count()
+                + indentation.chars().count()
+                + indent_unit.chars().count();
+
+            self.cursor = self.cursor_from_offset(cursor_offset);
+
+            if let Some(edit) = self.undo_stack.last_mut() {
+                edit.cursor_after = self.cursor;
+            }
+        } else {
+            let insertion = format!("{newline}{indentation}");
+
+            self.insert(&insertion);
+        }
     }
 
     pub fn undo(&mut self) {
@@ -261,6 +309,100 @@ impl EditorDocument {
             column: cursor.column.min(content_end - line_start),
         }
     }
+
+    pub fn type_character(&mut self, ch: char) {
+        let offset = self.cursor_offset();
+
+        //If the matching closing bracket is already present,
+        //move over it instead of inserting another one..
+
+        if matches!(ch, ')' | ']' | '}') && offset < self.char_count() && self.buffer.char(offset) == ch {
+            self.cursor = self.cursor_from_offset(offset + 1);
+            return;
+        }
+
+        let closing = match ch {
+            '(' => Some(')'),
+            '[' => Some(']'),
+            '{' => Some('}'),
+            _ => None,
+        };
+
+        if let Some(closing) = closing {
+            let pair = format!("{ch}{closing}");
+
+            // insert the pair as a single UNDOABLE operation
+            self.replace_range(offset, offset, &pair);
+
+            // place the cursor between brackets
+            self.cursor = self.cursor_from_offset(offset + 1);
+
+            //correct the cursor restored by redo
+            if let Some(edit) = self.undo_stack.last_mut() {
+                edit.cursor_after = self.cursor;
+            }
+        } else {
+            self.insert(&ch.to_string());
+        }
+    }
+
+    pub fn matching_bracket(
+        &self,
+        position: usize,
+    ) -> Option<usize> {
+        if position >= self.char_count() {
+            return None;
+        }
+
+        let bracket = self.buffer.char(position);
+
+        let (matching, forward) = match bracket {
+            '(' => (')', true),
+            '[' => (']', true),
+            '{' => ('}', true),
+
+            ')' => ('(', false),
+            ']' => ('[', false),
+            '}' => ('{', false),
+
+            _ => return None,
+        };
+
+        let mut depth = 0usize;
+
+        if forward {
+            for index in position..self.char_count() {
+                let ch = self.buffer.char(index);
+
+                if ch == bracket {
+                    depth += 1;
+                } else if ch == matching {
+                    depth -= 1;
+
+                    if depth == 0 {
+                        return Some(index);
+                    }
+                }
+            }
+        } else {
+            for index in (0..=position).rev() {
+                let ch = self.buffer.char(index);
+
+                if ch == bracket {
+                    depth += 1;
+                } else if ch == matching {
+                    depth -= 1;
+
+                    if depth == 0 {
+                        return Some(index);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
 }
 
 #[cfg(test)]
