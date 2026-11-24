@@ -273,7 +273,7 @@ impl KryonApp {
             .bg(rgb(Theme::SIDEBAR))
             .border_r_1()
             .border_color(rgb(Theme::BORDER))
-            .child(
+            .child( 
                 div()
                     .h(px(42.0))
                     .flex()
